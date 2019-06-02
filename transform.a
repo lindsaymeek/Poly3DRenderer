@@ -1,0 +1,1552 @@
+
+EXEC_LIB	=		1
+SP_LIB		=		1
+
+		include		"header.i"
+
+;
+;3d transformation routines
+;
+;usage:
+;
+;	_3d_init
+;	
+;
+;loop:
+;	_3d_clear
+;	_incremental_rotate/move/camera
+;	_render_objects
+;	_3d_display_objects
+;	goto loop
+;
+;	_3d_close
+;
+
+;USE_SHADING	=	1
+
+		xref	SIN
+		xref	COS
+	
+		section		ptransform_c,CODE
+
+;
+;divide by 16384 (32->16 result)
+;
+norm		macro
+		swap	\1
+		asl.w	#2,\1
+		endm
+
+;
+;divide by 16384 (32->32 result)
+;
+norm32		macro
+		norm	\1
+		ext.l	\1
+		endm
+
+;
+;multiply 32-bit fixed point numbers (*16384)
+;
+;\1,\2 = arguments (result returned in \1)
+;\3,\4 = temps
+
+muls3214	macro
+		move.w	\1,\3	;b
+		move.w	\2,\4	;d
+
+		mulu	\4,\3	;bd
+		swap	\3	;/2^16
+		ext.l	\3
+		
+		swap	\1	;a
+		mulu	\1,\4	;ad
+		add.l	\4,\3	;ad+bd/2^16
+
+		swap	\1	;b
+		move.w	\1,\4
+
+		swap	\2	;c
+		mulu	\2,\4	;bc
+		add.l	\4,\3	;ad+bc+bd/2^16
+
+		swap	\1
+		mulu	\2,\1	;ac
+		swap	\1	
+		clr.w	\1	;*2^16
+		add.l	\3,\1	;ac*2^16+ad+bc+bd/2^16
+		asl.l	#2,\1	;ac*2^16+2*ad+2*bc+bd/2^14
+		endm		
+
+;
+;Do local rotations on an object
+;
+
+		FN	_apply_local_rotations,a0:object,,a1 a2 a3 a4 a5 d0 d1 d2 d3 d4 d5 d6 d7
+	
+		lea	SIN,a1
+		lea	COS,a2
+
+alr13:		lea	OBJ_PANLR(a0),a3
+		movem.w	(a3),d0-d5	;fetch PANLR,PANL,TILTLR,TILT,ROLLLR,ROLL
+		
+		moveq	#0,d6
+
+		cmp.w	d0,d1		;see if any pan movement
+		beq.s	alr1
+		move.w	d0,OBJ_PANL(a0)	;update
+
+		move.w	0(a1,d0.w),OBJ_SPAN(a0)
+		move.w	0(a2,d0.w),OBJ_CPAN(a0)
+		moveq	#1,d6
+
+alr1:		cmp.w	d2,d3		;see if any tilt movement
+		beq.s	alr3
+		move.w	d2,OBJ_TILTL(a0)	;update
+
+		move.w	0(a1,d2.w),OBJ_STILT(a0)
+		move.w	0(a2,d2.w),OBJ_CTILT(a0)
+		addq.w	#2,d6
+
+alr3:		cmp.w	d4,d5		;see if any roll movement
+		beq.s	alr5
+		move.w	d4,OBJ_ROLLL(a0)
+
+		move.w	0(a1,d4.w),OBJ_SROLL(a0)
+		move.w	0(a2,d4.w),OBJ_CROLL(a0)
+		addq.w	#4,d6
+
+alr5:		tst.w	d6		;any rotations to do?
+		bne.s	alr7
+alr8:		rts
+
+alr7:		lea	OBJ_POINT_LIST(a0),a3	;goto points list
+
+		move.l	head(a3),a3		;first node
+		move.l	succ(a3),d7		;next node
+		beq.s	alr8			;none
+
+		move.w	OBJ_SCALE(a0),a4	;fetch scaling constant
+
+		move.w	d6,a5
+
+alr9:		lea	PNT_XL(a3),a3		;skip extra info
+		movem.w	(a3)+,d0-d2		;fetch Xl,Yl,Zl
+
+		lsr.w	#1,d6			;pan
+		bcc.s	alr10
+	
+		move.w	d0,d3
+		muls.w	OBJ_CPAN(a0),d3		;x.cos(pan)
+		move.w	d1,d4
+		muls.w	OBJ_SPAN(a0),d4		;y.sin(pan)
+		sub.l	d4,d3			;x.cos(pan)-y.sin(pan)
+		norm	d3
+
+		move.w	d0,d4
+		muls.w	OBJ_SPAN(a0),d4		;x.sin(pan)
+		move.w	d1,d5
+		muls.w	OBJ_CPAN(a0),d5		;y.cos(pan)
+		add.l	d5,d4
+		norm	d4
+
+		move.w	d3,d0
+		move.w	d4,d1
+
+alr10:		lsr.w	#1,d6			;tilt?
+		bcc.s	alr11
+	
+		move.w	d1,d3
+		muls.w	OBJ_CTILT(a0),d3	;y.cos(tilt)
+		move.w	d2,d4
+		muls.w	OBJ_STILT(a0),d4	;z.sin(tilt)
+		sub.l	d4,d3			;y.cos(tilt)-z.sin(tilt)
+		norm	d3
+
+		move.w	d1,d4
+		muls.w	OBJ_STILT(a0),d4	;y.sin(tilt)
+		move.w	d2,d5
+		muls.w	OBJ_CTILT(a0),d5	;z.cos(tilt)
+		add.l	d5,d4
+		norm	d4
+
+		move.w	d3,d1
+		move.w	d4,d2
+
+alr11:		lsr.w	#1,d6			;roll?
+		bcc.s	alr12
+	
+		move.w	d0,d3
+		muls.w	OBJ_CROLL(a0),d3	;x.cos(roll)
+		move.w	d2,d4
+		muls.w	OBJ_SROLL(a0),d4	;z.sin(roll)
+		sub.l	d4,d3			;x.cos(roll)-z.sin(roll)
+		norm	d3
+
+		move.w	d0,d4
+		muls.w	OBJ_SROLL(a0),d4	;x.sin(roll)
+		move.w	d2,d5
+		muls.w	OBJ_CROLL(a0),d5	;z.cos(roll)
+		add.l	d5,d4
+		norm	d4
+
+		move.w	d3,d0
+		move.w	d4,d2
+
+alr12:		move.w	a4,d6			;copy scale to data reg
+
+		ext.l	d0
+		ext.l	d1
+		ext.l	d2
+		asl.l	d6,d0			;scale coordinates
+		asl.l	d6,d1
+		asl.l	d6,d2
+
+		move.l	d0,(a3)+		;save back
+		move.l	d1,(a3)+
+		move.l	d2,(a3)+
+
+		move.w	a5,d6			;restore rotation mask
+
+		move.l	d7,a3
+		move.l	succ(a3),d7		;next point
+		bne	alr9
+alr14:		rts
+
+;
+;Apply persective transform and do viewport clipping
+;
+
+XS		=	WIDTH_P
+YS		=	HEIGHT_P
+DEE_SHIFT	=	8
+
+		FN	_apply_perspective,a0:object,,a1 d0 d1 d2 d3 d4 d5 d6 d7 a2 a3
+
+		move.w	#XS,d6			;screen centre
+		move.w	#YS,d7
+		
+		move.w	#XS/2,d4		;screen centre /2
+		move.w	#YS/2,d5
+
+		move.l	OBJ_POINT_LIST(a0),a1	;first point
+		move.l	succ(a1),d0		;any?
+		beq.s	ap2
+
+ap1:		lea	PNT_XW(a1),a1		;skip to world coordinate offset
+		movem.l	(a1),d1/d2/d3		;Fetch Xw,Yw,Zw
+
+		tst.l	d3			;Zw <= 0?
+		ble.s	ap2
+
+		asr.l	#14-DEE_SHIFT,d1	;X*D
+		asr.l	#14-DEE_SHIFT,d2
+		
+		norm	d3
+		add.w	#(1<<DEE_SHIFT),d3	;Z+D
+
+		divs	d3,d1			;XD/(Z+D)
+
+		add.w	d4,d1			;add screen centre
+		blt.s	ap2			;clip to viewport
+		cmp.w	d6,d1
+		bge.s	ap2
+
+		divs	d3,d2			;YD/(Z+D)
+
+		add.w	d5,d2			;add screen centre
+		blt.s	ap2			;clip to viewport
+		cmp.w	d6,d2
+		bge.s	ap2
+
+		move.w	d1,PNT_XS-PNT_XW(a1)		;save
+		move.w	d2,PNT_YS-PNT_XW(a1)
+		
+		move.l	d0,a1				;next
+		move.l	succ(a1),d0
+		bne.s	ap1
+
+		move.w	#-1,OBJ_VISIBLE(a0)	;Visible
+		rts
+
+ap2:		clr.w	OBJ_VISIBLE(a0)		;Not visible
+		rts
+
+;
+;Apply camera transformation to local coordinates +offset to generate
+;
+;world coordinates
+;
+
+		FN	_apply_camera,a0:object a1:camera,,a2 a3 a4 a5 d0 d1 d2 d3 d4 d5 d6 d7
+
+		move.l	OBJ_POINT_LIST(a0),a2		;first point
+		tst.l	succ(a2)
+		bne.s	ac2
+		rts
+
+ac2:		move.l	OBJ_XO(a0),d0
+		move.l	OBJ_YO(a0),d1
+		move.l	OBJ_ZO(a0),d2
+
+ac1:		lea	CAM_R11(a1),a4
+
+		moveq	#0,d3
+
+		move.l	(a4)+,d5		;r11
+		beq.s	ac1aa
+
+		move.l	PNT_XLR(a2),d4		;pnt_xl
+		add.l	d0,d4			;+xo
+
+		muls3214	d4,d5,d6,d7
+		add.l	d4,d3
+
+ac1aa:		move.l	(a4)+,d5		;r21
+		beq.s	ac1a
+
+		move.l	PNT_YLR(a2),d4		;pnt_yl
+		add.l	d1,d4			;+yo
+
+		muls3214	d4,d5,d6,d7
+		add.l	d4,d3
+ac1a:
+
+		move.l	(a4)+,d5		;r31
+		beq.s	ac1b
+
+		move.l	PNT_ZLR(a2),d4		;pnt_zl
+		add.l	d2,d4			;+zo
+
+		muls3214	d4,d5,d6,d7
+		add.l	d4,d3
+		
+ac1b:		sub.l	(a4)+,d3		;-d1
+
+		move.l	d3,PNT_XW(a2)		;store Xw
+
+		moveq	#0,d3
+
+		move.l	(a4)+,d5		;r12
+		beq.s	ac1cc
+
+		move.l	PNT_XLR(a2),d4		;pnt_xl
+		add.l	d0,d4			;xo
+
+		muls3214	d4,d5,d6,d7
+		add.l	d4,d3
+
+ac1cc:		move.l	(a4)+,d5		;r22
+		beq.s	ac1c
+
+		move.l	PNT_YLR(a2),d4		;pnt_yl
+		add.l	d1,d4
+
+		muls3214	d4,d5,d6,d7
+		add.l	d4,d3
+
+ac1c:		move.l	(a4)+,d5		;r32
+		beq.s	ac1d
+
+		move.l	PNT_ZLR(a2),d4
+		add.l	d2,d4
+
+		muls3214	d4,d5,d6,d7
+		add.l	d4,d3
+		
+ac1d:		sub.l	(a4)+,d3		;-d2
+
+		move.l	d3,PNT_YW(a2)		;Yw
+
+		moveq	#0,d3
+
+		move.l	(a4)+,d5		;r13
+		beq.s	ac1ee
+
+		move.l	PNT_XLR(a2),d4		;pnt_xl
+		add.l	d0,d4			;xo
+
+		muls3214	d4,d5,d6,d7
+		add.l	d4,d3
+
+ac1ee:		move.l	(a4)+,d5		;r23
+		beq.s	ac1e
+
+		move.l	PNT_YLR(a2),d4		;pnt_yl
+		add.l	d1,d4
+
+		muls3214	d4,d5,d6,d7
+		add.l	d4,d3
+
+ac1e:		move.l	(a4)+,d5		;r33
+		beq.s	ac1f
+
+		move.l	PNT_ZLR(a2),d4
+		add.l	d2,d4
+
+		muls3214	d4,d5,d6,d7
+		add.l	d4,d3
+		
+ac1f:		sub.l	(a4)+,d3		;-d3
+
+		move.l	d3,PNT_ZW(a2)		;Zw
+
+		move.l	succ(a2),a2		;next point
+		tst.l	succ(a2)
+		bne	ac1
+		rts
+
+;
+;Compute camera coefficients
+;
+
+		FN	_calculate_camera,a0:camera,,a1 a2 a3 a5 d0 d1 d2 d3 d4 d5 d6 d7
+
+		lea	SIN,a1
+		lea	COS,a2
+
+		lea	CAM_PAN(a0),a5
+
+RSPAN		equr	d0
+RCPAN		equr	d1
+
+		move.w	(a5)+,d0		;pan
+		move.w	0(a2,d0.w),RCPAN	;cos(pan)
+		move.w	0(a1,d0.w),RSPAN	;sin(pan)
+
+RSTILT		equr	d2
+RCTILT		equr	d3
+
+		move.w	(a5)+,d2		;tilt
+		move.w	0(a2,d2.w),RCTILT	;cos(tilt)
+		move.w	0(a1,d2.w),RSTILT	;sin(tilt)
+
+RSROLL		equr	d4
+RCROLL		equr	d5
+
+		move.w	(a5)+,d4		;roll
+		move.w	0(a2,d4.w),RCROLL	;cos(roll)
+		move.w	0(a1,d4.w),RSROLL	;sin(roll)
+
+		lea	CAM_R11(a0),a3		;transformation coefficient start
+		
+		move.w	RCPAN,d6
+		muls.w	RCROLL,d6		;cos(p)cos(r)
+		norm32	d6
+
+		move.w	RSPAN,d7
+		muls.w	RSTILT,d7		;sin(p)sin(t)
+		norm	d7
+		muls.w	RSROLL,d7		;sin(p)sin(t)sin(r)
+		norm32	d7
+		add.l	d7,d6
+		move.l	d6,(a3)+		;r11
+
+		move.w	RCTILT,d6		;cos(t)sin(r)
+		muls.w	RSROLL,d6
+		norm32	d6
+		move.l	d6,(a3)+		;r21
+
+		move.w	RSPAN,d6
+		neg.w	d6
+		muls.w	RCROLL,d6		;-sin(p)cos(r)
+		norm32	d6
+
+		move.w	RCPAN,d7
+		muls.w	RSTILT,d7		;cos(p)sin(t)
+		norm	d7
+		muls.w	RCROLL,d7		;cos(p)sin(t)sin(r)
+		norm32	d7
+		add.l	d7,d6
+		move.l	d6,(a3)			;r31
+	
+		addq.l	#8,a3			;skip d1
+
+		move.w	RCPAN,d6
+		neg.w	d6
+		muls.w	RSTILT,d6		;-cos(p)sin(r)
+		norm32	d6
+
+		move.w	RSPAN,d7
+		muls.w	RSTILT,d7		;sin(p)sin(t)
+		norm	d7
+		muls.w	RCROLL,d7		;sin(p)sin(t)cos(r)
+		norm32	d7
+		add.l	d7,d6
+		move.l	d6,(a3)+		;r12
+
+		move.w	RCTILT,d6
+		muls.w	RCROLL,d6		;cos(t)cos(r)
+		norm32	d6
+		move.l	d6,(a3)+		;r22
+
+		move.w	RSPAN,d6
+		muls.w	RSROLL,d6		;sin(p)sin(r)
+		norm32	d6
+
+		move.w	RCPAN,d7		;cos(p)sin(t)
+		muls.w	RSROLL,d7
+		norm	d7
+		muls.w	RCROLL,d7		;cos(p)sin(t)cos(r)
+		norm32	d7
+		add.l	d7,d6
+		move.l	d6,(a3)			;r32
+		
+		addq.l	#8,a3			;skip d2
+
+		move.w	RSPAN,d6
+		muls.w	RCROLL,d6		;sin(p)cos(r)
+		norm32	d6
+		move.l	d6,(a3)+		;r13
+
+		move.w	RSTILT,d6		;-sin(t)
+		neg.w	d6
+		ext.l	d6
+		move.l	d6,(a3)+		;r23
+
+		move.w	RCPAN,d6		;cos(p)cos(t)
+		muls.w	RCTILT,d6
+		norm32	d6
+		move.l	d6,(a3)+		;r33
+
+		lea	CAM_XO(a0),a5
+		movem.l	(a5),d0-d2		;xo,yo,zo
+		lea	CAM_R11(a0),a3
+
+		moveq	#0,d3
+
+		move.l	(a3)+,d4		;xo*r11
+		beq.s	ccs1
+		muls3214	d4,d0,d5,d6
+		add.l	d4,d3
+
+ccs1:		move.l	(a3)+,d4		;yo*r21
+		beq.s	ccs2
+		muls3214	d4,d1,d5,d6
+		add.l	d4,d3
+
+ccs2:		move.l	(a3)+,d4		;zo*r31
+		beq.s	ccs3
+		muls3214	d4,d2,d5,d6
+		add.l	d4,d3
+
+ccs3:		move.l	d3,(a3)+		;d1
+
+		movem.l	(a5),d0-d2		;xo,yo,zo
+
+		moveq	#0,d3
+
+		move.l	(a3)+,d4		;xo*r12
+		beq.s	ccs4
+		muls3214	d4,d0,d5,d6
+		add.l	d4,d3
+
+ccs4:		move.l	(a3)+,d4		;yo*r22
+		beq.s	ccs5
+		muls3214	d4,d1,d5,d6
+		add.l	d4,d3
+
+ccs5:		move.l	(a3)+,d4		;zo*r32
+		beq.s	ccs6
+		muls3214	d4,d2,d5,d6
+		add.l	d4,d3
+
+ccs6:		move.l	d3,(a3)+		;d2
+
+		movem.l	(a5),d0-d2		;xo,yo,zo
+
+		moveq	#0,d3
+
+		move.l	(a3)+,d4		;xo*r13
+		beq.s	ccs7
+		muls3214	d4,d0,d5,d6
+		add.l	d4,d3
+
+ccs7:		move.l	(a3)+,d4		;yo*r23
+		beq.s	ccs8
+		muls3214	d4,d1,d5,d6
+		add.l	d4,d3
+
+ccs8:		move.l	(a3)+,d4		;zo*r33
+		beq.s	ccs9
+		muls3214	d4,d2,d5,d6
+		add.l	d4,d3
+
+ccs9:		move.l	d3,(a3)			;d3
+		rts
+
+;
+;Back face culling
+;
+;ref: graphics gems volume 1
+;
+;test:	let a,b,c be three points on a surface, defined counter clockwise
+;	test visibility by examining wrapping direction
+;	ie. cross product of ba and bc > 0
+;
+
+		FN	_apply_removal,a0:object,,a1 d0 a2 a3 a4 d1 d2 d3 d4 d5 d6 d7
+
+		tst.w	OBJ_VISIBLE(a0)		;only visible objects
+		beq.s	ar3
+		move.l	OBJ_POLY_LIST(a0),a1	;polygon list
+		move.l	succ(a1),d0
+		beq.s	ar3
+
+ar1:		lea	POLY_VERTICE(a1),a2	;vertice pointers
+		movem.l	(a2),a2/a3/a4		;points 1,2,3
+
+		move.w	PNT_XS(a2),d1		;a
+		move.w	PNT_YS(a2),d2
+
+		move.w	PNT_XS(a3),d3		;b
+		move.w	PNT_YS(a3),d4
+
+		move.w	PNT_XS(a4),d5		;c
+		move.w	PNT_YS(a4),d6
+
+		sub.w	d3,d1			;-(ax-bx) = (bx-ax) = u1
+		sub.w	d4,d2			;-(ay-by) = (by-ay) = u2
+		neg.w	d1
+		neg.w	d2
+		sub.w	d5,d3			;(bx-cx) = v1
+		sub.w	d6,d4			;(by-cy) = v2
+
+		muls	d4,d1			; v2u1
+		muls	d3,d2			; v1u2
+		sub.l	d2,d1			; v2u1-v1u2
+
+		moveq	#-1,d2
+		tst.l	d1			;test sign
+		blt.s	ar2
+		moveq	#0,d2			;not visible if < 0
+
+ar2:		move.w	d2,POLY_VISIBLE(a1)	;record visibility
+
+		move.l	d0,a1			;next polygon
+		move.l	succ(a1),d0
+		bne.s	ar1
+ar3:		rts
+
+;
+;Surface shading
+;
+;ref: graphics gems volume 1
+;
+;computes v.h = a/sqrt(2a) where a=l.v+1 in unit form
+;
+;range of a 				= [0..2]
+;range of sqrt(2a)	= sqrt([0..4]) 	= [0..2]
+;v.h					= [0..1]
+;
+
+		FN	_apply_shading,a0:object a1:camera,,a2 a3 a4 d0 d1 d2 d3 d4 d5 d6 d7
+
+		move.l	a6,-(sp)
+
+		IFND	USE_SHADING
+		bra	as2
+		ENDC
+
+		move.l	_SPBase(pc),a6		;ffp library base
+
+		xref	VDOTH			;v.h lookup table
+		lea	VDOTH,a4		;for shading calculations
+
+		tst.w	OBJ_VISIBLE(a0)		;only for visible objects
+		beq	as2
+
+		move.l	OBJ_POLY_LIST(a0),a2	;polygon list
+		tst.l	succ(a2)
+		beq	as2			;none?
+
+as1:		tst.w	POLY_VISIBLE(a2)	;only for visible surfaces
+		beq	as3
+
+		move.l	POLY_VERTICE(a2),a3	;use first point on surface
+
+		move.l	CAM_XO(a1),d0		;compute approximate ||V||
+		sub.l	PNT_XW(a3),d0		;vx-sx
+		move.l	CAM_YO(a1),d1
+		sub.l	PNT_YW(a3),d1		;vy-sy
+		move.l	CAM_ZO(a1),d2
+		sub.l	PNT_ZW(a3),d2		;vz-sz
+		CALL	_euclidean,d0:dx d1:dy d2:dz,d0:dr,d5 d6 d7 a0 a2 a3 a4 a1
+		jsr	SPFlt(a6)		;convert to FFP
+		move.l	d0,-(sp)
+
+		move.l	CAM_L_XO(a1),d0		;compute approximate ||L||
+		sub.l	PNT_XW(a3),d0		;lx-sx
+		move.l	CAM_L_YO(a1),d1	
+		sub.l	PNT_YW(a3),d1		;ly-sy
+		move.l	CAM_L_ZO(a1),d2
+		sub.l	PNT_ZW(a3),d2		;lz-sz
+		CALL	_euclidean,d0:dx d1:dy d2:dz,d0:dr,d5 d6 d7 a0 a2 a3 a1 a4
+		jsr	SPFlt(a6)
+		move.l	(sp)+,d1
+		jsr	SPMul(a6)		;||V||*||L||
+		move.l	d0,-(sp)
+
+		move.l	CAM_XO(a1),d0
+		sub.l	PNT_XW(a3),d0		;vx-sx
+		jsr	SPFlt(a6)
+		move.l	d0,-(sp)
+
+		move.l	CAM_L_XO(a1),d0
+		sub.l	PNT_XW(a3),d0		;lx-sx
+		jsr	SPFlt(a6)
+		move.l	(sp)+,d1
+		jsr	SPMul(a6)		;vx*lx
+		move.l	d0,-(sp)
+
+		move.l	CAM_YO(a1),d0
+		sub.l	PNT_YW(a3),d0		;vy-sy
+		jsr	SPFlt(a6)
+		move.l	d0,-(sp)
+
+		move.l	CAM_L_YO(a1),d0	
+		sub.l	PNT_YW(a3),d0		;ly-sy
+		jsr	SPFlt(a6)
+		move.l	(sp)+,d1
+		jsr	SPMul(a6)		;vy*ly
+
+		move.l	(sp)+,d1
+		jsr	SPAdd(a6)		;vx*lx+vy*ly
+		move.l	d0,-(sp)
+
+		move.l	CAM_ZO(a1),d0
+		sub.l	PNT_ZW(a3),d0		;vz-sz
+		jsr	SPFlt(a6)
+		move.l	d0,-(sp)
+
+		move.l	CAM_L_ZO(a1),d0
+		sub.l	PNT_ZW(a3),d0		;lz-sz
+		jsr	SPFlt(a6)
+		move.l	(sp)+,d1
+		jsr	SPMul(a6)		;vz*lz
+
+		move.l	(sp)+,d1
+		jsr	SPAdd(a6)		;vx*lx+vy*ly+vz*lz
+
+		move.l	(sp)+,d1
+		jsr	SPDiv(a6)		;(V.L)/(||V||*||L||)
+		move.l	d0,-(sp)
+
+		move.l	#16384,d0
+		jsr	SPFlt(a6)		;convert to -16384 to 16384
+		move.l	(sp)+,d1
+		jsr	SPMul(a6)
+		jsr	SPFix(a6)		;convert to int
+
+		add.l	#16384,d0		;convert to 0 to 32768
+		tst.l	d0
+		bpl.s	as4			;clip to min , max
+		moveq	#0,d0
+as4:		cmp.l	#16384*2,d0
+		ble.s	as5
+		move.l	#16384*2,d0
+
+as5:		add.l	d0,d0
+		move.w	0(a4,d0.l),d0		;fetch v.h in *16384
+
+		moveq	#12,d1
+		lsr.w	d1,d0
+		addq.w	#4,d0
+		and.w	#7,d0
+		move.w	d0,POLY_COLOUR(a2)
+
+as3:		move.l	succ(a2),a2
+		tst.l	succ(a2)
+		bne	as1
+
+as2:		move.l	(sp)+,a6
+		rts
+
+;
+;maintainance functions for polygons,vertices,and objects
+;
+
+;
+;create a camera and world definition
+;
+
+		FN	_add_camera,d0:xo d1:yo d2:zo d3:pan d4:tilt d5:roll,a1:camera,a0 d0
+
+		movem.l	d0-d5,-(sp)
+		move.w	#CAM_SIZE,d0
+		CALL	_makenode,d0:size,a0:node
+		bne.s	mow1
+		lea	6*4(sp),sp
+		sub.l	a1,a1
+		rts
+
+mow1:		move.l	a0,a1
+
+		movem.l	(sp)+,d0-d5
+		lea	CAM_PAN(a1),a0
+
+		move.w	d3,(a0)+		;pan, tilt, roll
+		move.w	d4,(a0)+
+		move.w	d5,(a0)+
+
+		move.l	d0,(a0)+		;xo, yo, zo
+		move.l	d1,(a0)+
+		move.l	d2,(a0)+
+
+		move.l	d0,(a0)+		;light source is observer
+		move.l	d1,(a0)+
+		move.l	d2,(a0)+
+
+		lea	CAM_LIST(a1),a0
+		CALL	_newlist,a0:list,,a1
+		rts
+
+;
+;create an object
+;
+
+		FN	_add_object,a2:camera,a1:object,a0 d0
+
+		move.w	#OBJ_SIZE,d0
+		CALL	_makenode,d0:size,a0:node,a2
+		bne.s	mo1
+		rts
+
+mo1:		move.l	a0,a1
+
+		clr.w	OBJ_PANLR(a1)		;initial state
+		clr.w	OBJ_TILTLR(a1)
+		clr.w	OBJ_ROLLLR(a1)
+
+		moveq	#-1,d0
+		move.w	d0,OBJ_PANL(a1)
+		move.w	d0,OBJ_TILTL(a1)
+		move.w	d0,OBJ_ROLLL(a1)
+
+		clr.l	OBJ_XO(a1)
+		clr.l	OBJ_YO(a1)
+		clr.l	OBJ_ZO(a1)
+		clr.w	OBJ_VISIBLE(a1)
+		clr.w	OBJ_SCALE(a1)
+
+		clr.w	priority(a1)
+
+		lea	OBJ_POINT_LIST(a1),a0
+		CALL	_newlist,a0:list,,a1 a2
+		lea	OBJ_POLY_LIST(a1),a0
+		CALL	_newlist,a0:list,,a1 a2
+
+		move.l	a1,-(sp)
+		move.l	a1,a0
+		lea	CAM_LIST(a2),a1
+		CALL	_add_node,a1:list a0:node
+		move.l	(sp)+,a1
+		rts
+
+;
+;create a new point for a given object
+;
+
+		FN	_add_point,a1:object d0:x d1:y d2:z,a0:point,d0 d1 d2
+
+		movem.w	d0-d2,-(sp)
+
+		move.w	#PNT_SIZE,d0
+		CALL	_makenode,d0:size,a0:node,a1
+		bne.s	apo1
+		addq.l	#2*3,sp
+		rts
+
+apo1:		movem.w	(sp)+,d0-d2
+
+		move.w	d0,PNT_XL(a0)
+		move.w	d1,PNT_YL(a0)
+		move.w	d2,PNT_ZL(a0)
+
+		move.w	d0,PNT_XLR(a0)
+		move.w	d1,PNT_YLR(a0)
+		move.w	d2,PNT_ZLR(a0)
+
+		clr.l	PNT_XW(a0)
+		clr.l	PNT_YW(a0)
+		clr.l	PNT_ZW(a0)
+		clr.w	PNT_XS(a0)
+		clr.w	PNT_YS(a0)
+
+		clr.w	priority(a0)
+
+		movem.l	a0/a1,-(sp)
+		lea	OBJ_POINT_LIST(a1),a1
+		CALL	_add_node,a1:list a0:node
+		movem.l	(sp)+,a0/a1
+		rts
+
+;
+;create a new polygon
+;
+
+		FN	_add_polygon,a1:object d0:points d1:colour d2:texture a2:point_list,a0:polygon,d0 a3 a2
+
+		movem.w	d0-d2,-(sp)
+
+		asl.w	#2,d0
+		add.w	#POLY_SIZE,d0
+		CALL	_makenode,d0:size,a0:node,a1 a2
+		bne.s	apol1
+		addq.l	#2*3,sp
+		rts
+
+apol1:		movem.w	(sp)+,d0-d2
+
+		move.w	d0,POLY_VERTICES(a0)
+		move.w	d1,POLY_COLOUR(a0)
+		move.w	d2,POLY_TEXTURE(a0)
+		clr.w	POLY_VISIBLE(a0)
+
+		clr.w	priority(a0)
+
+		lea	POLY_VERTICE(a0),a3
+		subq.w	#1,d0
+apol2:		move.l	(a2)+,(a3)+
+		dbra	d0,apol2
+		
+		movem.l	a0-a1,-(sp)
+		lea	OBJ_POLY_LIST(a1),a1
+		CALL	_add_node,a1:list a0:node
+		movem.l	(sp)+,a0-a1
+		rts
+
+;
+;fetch the address of the nth polygon belonging to an object
+;
+
+		FN	_get_polygon,a0:object d0:n,a1:polygon,d1 d0
+
+		lea	OBJ_POLY_LIST(a0),a1
+		move.l	head(a1),d1
+		beq.s	gpo1
+
+gpo3:		move.l	d1,a1
+		subq.w	#1,d0
+		beq.s	gpo2
+
+		move.l	succ(a1),d1
+		bne.s	gpo3
+gpo1:		sub.l	a1,a1
+gpo2:		rts
+
+;
+;delete an object and its associated data
+;
+
+		FN	_kill_object,a1:object,,a3 a0
+
+		move.l	a1,a3
+		lea	OBJ_POINT_LIST(a3),a1
+		CALL	_killlist,a1:list,,a3
+		lea	OBJ_POLY_LIST(a3),a1
+		CALL	_killlist,a1:list,,a3
+		move.l	a3,a0
+		CALL	_remove,a0:node,,a3
+		move.l	a3,a0
+		CALL	_killnode,a0:node
+		rts
+
+;
+;delete a camera and its associated data
+;
+
+		FN	_kill_camera,a0:camera,,a4 d0 a0 a1
+
+		move.l	a0,a4
+		lea	CAM_LIST(a4),a1
+3$:		move.l	succ(a1),d0
+		beq.s	1$
+
+2$:		move.l	d0,-(sp)
+		CALL	_kill_object,a1:object,,a4
+		move.l	(sp)+,a1
+		bra.s	3$	
+		
+1$:		move.l	a4,a0
+		CALL	_killnode,a0:node
+		rts
+
+;
+;Draw the vertices of an object on the screen using points
+;
+
+		FN	_draw_object,a0:object,,a1 d7 d6 a2 a3 d0 d1 d2
+
+		tst.w	OBJ_VISIBLE(a0)		;not visible?
+		beq.s	do1
+			
+		lea	OBJ_POLY_LIST(a0),a1
+		move.l	head(a1),a1		;first node
+
+		move.l	succ(a1),d7		;end?
+		beq.s	do1
+
+do2:		tst.w	POLY_VISIBLE(a1)	;is polysurface visible
+		beq.s	do3			;no..next
+
+		move.w	POLY_VERTICES(a1),d6	;#vertices
+		subq.w	#1,d6
+		lea	POLY_VERTICE(a1),a2	;vertice table
+
+		moveq	#0,d4
+		moveq	#0,d5
+
+do4:		move.l	(a2)+,a3		;point address
+
+		move.w	PNT_XS(a3),d0		;fetch address
+		move.w	PNT_YS(a3),d1
+		moveq	#7,d2			;colour=max
+
+		add.w	d0,d4
+		add.w	d1,d5
+
+		CALL	_draw_dot,d0:x d1:y d2:color,,a1 d7 d6 a2 d4 d5
+		dbra	d6,do4			;next point
+
+		divu	POLY_VERTICES(a1),d4
+		divu	POLY_VERTICES(a1),d5
+		move.w	d4,d0			;surface centre
+		move.w	d5,d1
+		move.w	POLY_COLOUR(a1),d2	;draw in the adjusted palette colour
+		CALL	_draw_dot,d0:x d1:y d2:color,,a1 d7 d6 a2
+
+do3:		move.l	d7,a1			;next polysurface
+		move.l	succ(a1),d7
+		bne.s	do2
+
+do1:		rts
+
+;
+;Compute bounding boxes for polygon surfaces, and objects
+;
+
+		FN	_bounding_boxes,a0:camera,,a2 a1 a3 a4 d0 d1 d2 d3 d4 d5 d6
+
+		;compute bounding box for polygons and objects
+
+		move.l	CAM_LIST(a0),a2		;first object
+		tst.l	succ(a2)
+		bne.s	ro5
+		rts
+
+ro5:		clr.w	OBJ_UNDRAWN(a2)		;say the object is already drawn
+		tst.w	OBJ_VISIBLE(a2)		;not visible?
+		beq	ro2
+
+		move.l	OBJ_POLY_LIST(a2),a1	;any surfaces
+		tst.l	succ(a1)
+		beq	ro2
+
+		move.w	#32767,OBJ_XT(a2)	;reset object bounding box
+		move.w	#-32767,OBJ_XS(a2)
+		move.w	#32767,OBJ_YT(a2)
+		move.w	#-32767,OBJ_YS(a2)
+		move.w	#-1,OBJ_UNDRAWN(a2)	;say the object is undrawn
+
+ro4:		tst.w	POLY_VISIBLE(a1)	;is the polygon visible
+		beq	ro3
+
+	;compute polygon bounding box and highest y coordinate
+
+	move.w	POLY_VERTICES(a1),d6	;size 
+	lea	POLY_VERTICE(a1),a4	;skip polygon info structure
+	move.w	#32767,d0		;reset size detectors
+	move.w	#-32767,d1
+	move.w	d0,d2
+	move.w	d1,d3
+
+cbb5:	move.l	(a4)+,a3		;point n index
+	
+	move.w	POINT_X(a3),d5		;xo
+	cmp.w	d0,d5
+	bge.s	cbb1
+	move.w	d5,d0
+cbb1:	cmp.w	d1,d5
+	ble.s	cbb2
+	move.w	d5,d1
+cbb2:
+	move.w	POINT_Y(a3),d5		;yo
+	cmp.w	d2,d5
+	bge.s	cbb3
+	move.w	d5,d2
+
+	move.l	a4,d4			;save highest
+
+cbb3:	cmp.w	d3,d5
+	ble.s	cbb4
+	move.w	d5,d3
+cbb4:
+	subq.w	#1,d6
+	bne.s	cbb5
+
+	sub.l	a1,d4			;work out offset from start
+	sub.w	#4+POLY_VERTICE,d4	
+	move.w	d4,POLY_HIGHEST(a1)
+
+	;update object bounding box
+
+	cmp.w	OBJ_XT(a2),d0
+	bge.s	obb1
+	move.w	d0,OBJ_XT(a2)
+obb1:	cmp.w	OBJ_YT(a2),d2
+	bge.s	obb2
+	move.w	d2,OBJ_YT(a2)
+obb2:	cmp.w	OBJ_XS(a2),d1
+	ble.s	obb3
+	move.w	d1,OBJ_XS(a2)
+obb3:	cmp.w	OBJ_YS(a2),d3
+	ble.s	obb4
+	move.w	d3,OBJ_YS(a2)
+obb4:
+	;update values for render
+
+	move.w	d0,POLY_X(a1)
+	move.w	d2,POLY_Y(a1)
+	sub.w	d2,d3		;ys
+	move.w	d3,POLY_YS(a1)
+	sub.w	d0,d1		;xs
+	addq.w	#1,d1
+	move.w	d1,POLY_XS(a1)
+
+ro3:		move.l	succ(a1),a1		;next polygon
+		tst.l	succ(a1)
+		bne	ro4
+
+		;convert xs,ys to their correct values
+
+		move.w	OBJ_XS(a2),d0
+		move.w	OBJ_YS(a2),d1
+		sub.w	OBJ_XT(a2),d0
+		sub.w	OBJ_YT(a2),d1
+		move.w	d0,OBJ_XS(a2)
+		move.w	d1,OBJ_YS(a2)
+
+ro2:		move.l	succ(a2),a2		;next object
+		tst.l	succ(a2)
+		bne	ro5
+		rts
+
+
+;
+;render an object
+;
+
+		FN	_render_object,a1:object a6:chip,,a1 a0
+
+		move.l	OBJ_POLY_LIST(a1),a1
+		tst.l	succ(a1)
+		beq.s	rob1
+
+rob3:		tst.w	POLY_VISIBLE(a1)		;draw all visible polygon surfaces
+		beq.s	rob2
+
+		move.l	screenr(pc),a0
+		CALL	_poly_generate,a0:screen a1:polygon a6:chip,,a1
+
+rob2:		move.l	succ(a1),a1
+		tst.l	succ(a1)
+		bne.s	rob3
+rob1:		rts
+
+;
+;do collision testing between objects and render
+;those which don't collide with any others
+;
+
+		FN	_render_uncollided,a0:camera a6:chip,,a1 d0 d1 a2 d2 d3
+
+		move.l	CAM_LIST(a0),a1		;first objects
+		move.l	succ(a1),d0
+		bne.s	rod9			;none?
+		rts
+
+rod9:		tst.w	OBJ_UNDRAWN(a1)		;skip this object?
+		beq.s	rod2
+
+		move.l	d0,a2
+		move.l	succ(a2),d1		;object n+1
+		beq.s	rod3			;none?
+
+rod6:		tst.w	OBJ_UNDRAWN(a2)		;skip this object?
+		beq.s	rod4
+
+		move.w	OBJ_XS(a1),d2
+		lsr.w	#1,d2
+		add.w	OBJ_XT(a1),d2
+
+		move.w	OBJ_XS(a2),d3		;centre of object extent
+		lsr.w	#1,d3
+		add.w	OBJ_XT(a2),d3
+
+		sub.w	d3,d2			;difference
+		bpl.s	rod5
+		neg.w	d2
+
+rod5:		move.w	OBJ_XS(a2),d3
+		add.w	OBJ_XS(a1),d3
+		lsr.w	#1,d3
+		cmp.w	d3,d2
+		bge.s	rod4			;uncollided
+
+		move.w	OBJ_YS(a1),d2
+		lsr.w	#1,d2
+		add.w	OBJ_YT(a1),d2
+
+		move.w	OBJ_YS(a2),d3
+		lsr.w	#1,d3
+		add.w	OBJ_YT(a2),d3
+
+		sub.w	d3,d2
+		bpl.s	rod7
+		neg.w	d2
+
+rod7:		move.w	OBJ_YS(a2),d3
+		add.w	OBJ_YS(a1),d3
+		lsr.w	#1,d3
+		cmp.w	d3,d2
+		blt.s	rod8			;collided
+
+rod4:		move.l	d1,a2			;next object for comparison
+		move.l	succ(a2),d1
+		bne.s	rod6
+
+rod3:		clr.w	OBJ_UNDRAWN(a1)		;render the object if nothing collided with it
+		movem.l	a0/a1,-(sp)
+		CALL	_render_object,a1:object a6:chip
+		movem.l	(sp)+,a0/a1
+
+rod2:		move.l	succ(a1),a1		;next object
+		move.l	succ(a1),d0
+		bne.s	rod9
+		rts
+
+;
+;this object has collided..record it and its collider in the sort list
+;
+
+rod8:		clr.w	OBJ_UNDRAWN(a1)		;stop further comparisons
+		clr.w	OBJ_UNDRAWN(a2)		;with these objects
+
+		move.w	CAM_SORT_I(a0),d0	;attempt to store
+		cmp.w	#4*SORT_MAX,d0
+		bge.s	rod2			;if no room, don't draw
+		move.l	a1,CAM_SORT_L(a0,d0.w)
+		addq.w	#4,d0			;store object and advance
+		
+		cmp.w	#4*SORT_MAX,d0
+		bge.s	rod10			;if no room, don't draw
+		move.l	a2,CAM_SORT_L(a0,d0.w)
+		addq.w	#4,d0			;store object and advance
+
+rod10:		move.w	d0,CAM_SORT_I(a0)
+		bra.s	rod2
+
+;
+;render collided objects
+;
+;this consists of a depth sort..it draws from the maximum Z to the minimum Z
+;using a modified insertion sort
+;
+
+
+		FN	_render_collided,a0:camera a6:chip,,a1 a2 d0 d1 d2 d3 a3 a4
+
+		lea	CAM_SORT_L(a0),a1	;sort list address
+		move.w	CAM_SORT_I(a0),d0	;sort list size * 4
+		lsr.w	#2,d0
+		subq.w	#1,d0
+
+1$:		move.l	a1,a2			;scan address
+		move.w	d0,d1			;scan index
+		moveq	#-1,d2			;maximum Z
+
+2$:		move.l	(a2)+,a3		;object n address
+		move.l	OBJ_ZO(a3),d3		;object Z
+		cmp.l	d2,d3			;update maximum
+		ble.s	3$
+		move.l	d3,d2
+		move.l	a2,a4			;remember address
+3$:		dbra	d1,2$			;next object
+
+		subq.l	#4,a4			;adjust for autoincrement
+		move.l	(a1),d1
+		move.l	(a4),(a1)		;do a swap
+		move.l	d1,(a4)
+
+		addq.l	#4,a2			;next sort index
+		subq.w	#1,d0
+		bgt.s	1$
+
+		lea	CAM_SORT_L(a0),a2	;draw objects in decided order
+		move.w	CAM_SORT_I(a0),d0
+
+4$:		move.l	(a2)+,a1
+		movem.l	d0/a0/a2,-(sp)
+		CALL	_render_object,a1:object a6:chip
+		movem.l	(sp)+,d0/a0/a2
+		subq.w	#4,d0
+		bne.s	4$
+		rts
+
+;
+;Render all visible objects, resolving depth ambiguities
+;
+
+		FN	_render_objects,a0:camera a6:chip,,a1 a2 d0 d1 d2 d3 d4 d5 d6 a3 a4
+
+		move.l	a0,-(sp)
+		;setup the blitter for doing polygon surfaces
+		CALL	_poly_setup,a6:chip
+		move.l	(sp)+,a0
+
+		;compute bounding boxes and reset draw flags		
+		CALL	_bounding_boxes,a0:camera,,a0
+
+		;render objects that didn't collide with anythinh
+		clr.w	CAM_SORT_I(a0)		;reset sort hopper
+		CALL	_render_uncollided,a0:camera a6:chip
+
+		;render objects that did collide from max Z to min Z
+		tst.w	CAM_SORT_I(a0)
+		beq.s	rc1
+		CALL	_render_collided,a0:camera a6:chip
+rc1:
+		;wait for interrupt driven blitter to finish
+;		CALL	_poly_iwait,a6:chip
+		rts
+
+;
+;double buffered screen definitions
+;
+
+screen1:	ds.b	SCREEN_SIZE
+		EVEN
+screen2:	ds.b	SCREEN_SIZE
+		EVEN
+
+screenr:	dc.l	screen1
+screenc:	dc.l	screen2
+
+;
+;rotate screens after redraw
+;
+
+		FN	_3d_display_swap,a6:chip,,a0 a1
+
+		move.l	screenr(pc),a0
+		move.l	screenc(pc),a1
+		move.l	a1,screenr
+		move.l	a0,screenc
+
+		CALL	_wait_display,a6:chip
+		CALL	_rotate_rd_screens,a6:chip
+		rts
+
+;
+;resident floating point maths library
+;
+
+_SPName:	dc.b	"mathffp.library",0
+		EVEN
+_SPBase:	ds.l	1
+
+;
+;setup the 3d system
+;
+
+		FN	_3d_init,a6:chip,,a0
+
+		IFD	USE_SHADING
+		move.l	a6,-(sp)		;open the maths library
+		lea	_SPName(pc),a1
+		syse	OldOpenLibrary
+		move.l	d0,_SPBase
+		move.l	(sp)+,a6
+		ENDC
+
+		move.l	screenr(pc),a0
+		CALL	_poly_reset,a0:screen
+		move.l	screenc(pc),a0
+		CALL	_poly_reset,a0:screen
+
+		CALL	_poly_init,a6:chip
+		rts
+
+;
+;closedown the 3d system
+;
+
+		FN	_3d_close,a6:chip
+
+		IFD	USE_SHADING
+		move.l	_SPBase(pc),d0
+		beq.s	1$
+		move.l	d0,a1
+		move.l	a6,-(sp)
+		syse	CloseLibrary
+		move.l	(sp)+,a6
+1$:
+		ENDC
+
+		CALL	_poly_close,a6:chip
+		rts
+
+;
+;clear the redraw screen
+;
+
+		FN	_3d_clear,a6:chip,,a0
+
+		move.l	screenr(pc),a0
+		CALL	_poly_clear,a0:screen a6:chip
+		rts
+
+;
+;increment the rotation of an object and recompute system
+;
+		FN	_incremental_rotate,a0:object a1:camera d0:dpan d1:dtilt d2:droll,,d0 d1 d2
+
+		add.w	d0,d0
+		add.w	d1,d1
+		add.w	d2,d2
+
+		add.w	OBJ_PANLR(a0),d0
+		bpl.s	2$
+3$:		add.w	#360*2,d0
+		bmi.s	3$
+2$:		cmp.w	#360*2,d0
+		blt.s	1$
+		sub.w	#360*2,d0
+		bra.s	2$
+1$:		move.w	d0,OBJ_PANLR(a0)
+
+		add.w	OBJ_TILTLR(a0),d1
+		bpl.s	12$
+13$:		add.w	#360*2,d1
+		bmi.s	13$
+12$:		cmp.w	#360*2,d1
+		blt.s	11$
+		sub.w	#360*2,d1
+		bra.s	12$
+11$:		move.w	d1,OBJ_TILTLR(a0)
+
+		add.w	OBJ_ROLLLR(a0),d2
+		bpl.s	22$
+23$:		add.w	#360*2,d2
+		bmi.s	23$
+22$:		cmp.w	#360*2,d2
+		blt.s	21$
+		sub.w	#360*2,d2
+		bra.s	22$
+21$:		move.w	d2,OBJ_ROLLLR(a0)
+
+		move.l	a1,-(sp)		
+		CALL	_apply_local_rotations,a0:object,,a0
+		move.l	(sp),a1
+		CALL	_apply_camera,a0:object a1:camera,,a0
+		CALL	_apply_perspective,a0:object,,a0
+		CALL	_apply_removal,a0:object,,a0
+		move.l	(sp)+,a1
+		CALL	_apply_shading,a0:object a1:camera,,a0
+		rts
+
+;
+;increment the object location in world space and recompute system
+;		
+
+		FN	_incremental_move,a0:object a1:camera d0:dx d1:dy d2:dz,,d0 d1 d2
+
+		add.l	OBJ_XO(a0),d0
+		add.l	OBJ_YO(a0),d1
+		add.l	OBJ_ZO(a0),d2
+
+		move.l	d0,OBJ_XO(a0)
+		move.l	d1,OBJ_XO(a0)
+		move.l	d2,OBJ_XO(a0)
+
+		move.l	a1,-(sp)		
+		CALL	_apply_local_rotations,a0:object,,a0
+		move.l	(sp),a1
+		CALL	_apply_camera,a0:object a1:camera,,a0
+		CALL	_apply_perspective,a0:object,,a0
+		CALL	_apply_removal,a0:object,,a0
+		move.l	(sp)+,a1
+		CALL	_apply_shading,a0:object a1:camera,,a0
+		rts
+
+;
+;increment the camera position by a fixed amount and recompute system
+;
+
+		FN	_incremental_camera,a0:camera d0:dx d1:dy d2:dz d3:dpan d4:dtilt d5:droll,,d0 d1 d2 d3 d4 d5 a0 a1
+
+		add.l	CAM_XO(a0),d0
+		add.l	CAM_YO(a0),d1
+		add.l	CAM_ZO(a0),d2
+
+		move.l	d0,CAM_XO(a0)
+		move.l	d1,CAM_YO(a0)
+		move.l	d2,CAM_ZO(a0)
+		
+		add.w	d3,d3
+		add.w	d4,d4
+		add.w	d5,d5
+
+		add.w	CAM_PAN(a0),d3
+		bpl.s	2$
+3$:		add.w	#360*2,d3
+		bmi.s	3$
+2$:		cmp.w	#360*2,d3
+		blt.s	1$
+		sub.w	#360*2,d3
+		bra.s	2$
+1$:		move.w	d3,CAM_PAN(a0)
+
+		add.w	CAM_TILT(a0),d4
+		bpl.s	12$
+13$:		add.w	#360*2,d4
+		bmi.s	13$
+12$:		cmp.w	#360*2,d4
+		blt.s	11$
+		sub.w	#360*2,d4
+		bra.s	12$
+11$:		move.w	d4,CAM_TILT(a0)
+
+		add.w	CAM_ROLL(a0),d5
+		bpl.s	22$
+23$:		add.w	#360*2,d5
+		bmi.s	23$
+22$:		cmp.w	#360*2,d5
+		blt.s	21$
+		sub.w	#360*2,d5
+		bra.s	22$
+21$:		move.w	d5,CAM_ROLL(a0)
+
+		CALL	_calculate_camera,a0:camera,,a0
+
+		move.l	a0,a1
+		move.l	CAM_LIST(a1),a0
+		tst.l	succ(a0)
+		beq.s	30$
+
+31$:		move.l	a1,-(sp)		
+		CALL	_apply_local_rotations,a0:object,,a0
+		move.l	(sp),a1
+		CALL	_apply_camera,a0:object a1:camera,,a0
+		CALL	_apply_perspective,a0:object,,a0
+		CALL	_apply_removal,a0:object,,a0
+		move.l	(sp)+,a1
+		CALL	_apply_shading,a0:object a1:camera,,a0
+
+		move.l	succ(a0),a0
+		tst.l	succ(a0)
+		bne.s	31$
+30$:		rts
+
+		END

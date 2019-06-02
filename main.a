@@ -1,0 +1,393 @@
+
+;
+;test code for 3d routines
+;
+
+		include		"header.i"
+
+		jmp	_main
+
+VBI_stacksize	=	4096
+
+		xdef	lut_spalette
+
+lut_spalette:	dc.w	0,8,9,10,11,12,13,15
+
+object:		ds.l	1
+object1:	ds.l	1
+object2:	ds.l	1
+
+pnta:		ds.l	1
+pntb:		ds.l	1
+pntc:		ds.l	1
+pntd:		ds.l	1
+pnte:		ds.l	1
+pntf:		ds.l	1
+pntg:		ds.l	1
+pnth:		ds.l	1
+
+pnts:		ds.l	4
+
+camera:		ds.l	1
+		
+defv		macro
+		move.w	#\1,d0
+		move.w	#\2,d1
+		move.w	#\3,d2
+		move.l	object(pc),a1
+		endm
+
+dd		=	16383
+
+		FN	_setup_objecta
+
+		move.l	camera(pc),a2
+		CALL	_add_object,a2:camera,a1:object
+		move.l	a1,object
+		move.l	a1,object1
+
+		move.l	#0,OBJ_XO(a1)
+		move.l	#0,OBJ_YO(a1)
+		move.l	#64*16384,OBJ_ZO(a1)
+		move.w	#5,OBJ_SCALE(a1)
+
+		defv	dd,-dd,dd
+		CALL	_add_point,a1:object d0:x d1:y d2:z,a0:point
+		move.l	a0,pnta
+
+		defv	dd,-dd,-dd
+		CALL	_add_point,a1:object d0:x d1:y d2:z,a0:point
+		move.l	a0,pntb
+
+		defv	-dd,-dd,-dd
+		CALL	_add_point,a1:object d0:x d1:y d2:z,a0:point
+		move.l	a0,pntc
+
+		defv	-dd,-dd,dd
+		CALL	_add_point,a1:object d0:x d1:y d2:z,a0:point
+		move.l	a0,pntd
+
+		defv	dd,dd,dd
+		CALL	_add_point,a1:object d0:x d1:y d2:z,a0:point
+		move.l	a0,pnte
+
+		defv	dd,dd,-dd
+		CALL	_add_point,a1:object d0:x d1:y d2:z,a0:point
+		move.l	a0,pntf
+
+		defv	-dd,dd,-dd
+		CALL	_add_point,a1:object d0:x d1:y d2:z,a0:point
+		move.l	a0,pntg
+
+		defv	-dd,dd,dd
+		CALL	_add_point,a1:object d0:x d1:y d2:z,a0:point
+		move.l	a0,pnth
+
+		lea	pnts(pc),a2
+		move.l	pntd(pc),(a2)+
+		move.l	pntc(pc),(a2)+
+		move.l	pntg(pc),(a2)+
+		move.l	pnth(pc),(a2)
+		lea	pnts(pc),a2
+		move.l	object(pc),a1
+		move.w	#4,d0
+		move.w	#7,d1
+		move.w	#-1,d2
+		CALL	_add_polygon,a1:object a2:point_list d0:points d1:colour d2:texture,a0:polygon
+
+		lea	pnts(pc),a2
+		move.l	pnta(pc),(a2)+
+		move.l	pntd(pc),(a2)+
+		move.l	pnth(pc),(a2)+
+		move.l	pnte(pc),(a2)
+		lea	pnts(pc),a2
+		move.l	object(pc),a1
+		move.w	#4,d0
+		move.w	#6,d1
+		move.w	#-1,d2
+		CALL	_add_polygon,a1:object a2:point_list d0:points d1:colour d2:texture,a0:polygon
+
+		lea	pnts(pc),a2
+		move.l	pntb(pc),(a2)+
+		move.l	pnta(pc),(a2)+
+		move.l	pnte(pc),(a2)+
+		move.l	pntf(pc),(a2)
+		lea	pnts(pc),a2
+		move.l	object(pc),a1
+		move.w	#4,d0
+		move.w	#5,d1
+		move.w	#-1,d2
+		CALL	_add_polygon,a1:object a2:point_list d0:points d1:colour d2:texture,a0:polygon
+
+		lea	pnts(pc),a2
+		move.l	pntc(pc),(a2)+
+		move.l	pntb(pc),(a2)+
+		move.l	pntf(pc),(a2)+
+		move.l	pntg(pc),(a2)
+		lea	pnts(pc),a2
+		move.l	object(pc),a1
+		move.w	#4,d0
+		move.w	#4,d1
+		move.w	#-1,d2
+		CALL	_add_polygon,a1:object a2:point_list d0:points d1:colour d2:texture,a0:polygon
+
+		lea	pnts(pc),a2
+		move.l	pnta(pc),(a2)+
+		move.l	pntb(pc),(a2)+
+		move.l	pntc(pc),(a2)+
+		move.l	pntd(pc),(a2)
+		lea	pnts(pc),a2
+		move.l	object(pc),a1
+		move.w	#4,d0
+		move.w	#3,d1
+		move.w	#-1,d2
+		CALL	_add_polygon,a1:object a2:point_list d0:points d1:colour d2:texture,a0:polygon
+
+		lea	pnts(pc),a2
+		move.l	pnth(pc),(a2)+
+		move.l	pntg(pc),(a2)+
+		move.l	pntf(pc),(a2)+
+		move.l	pnte(pc),(a2)
+		lea	pnts(pc),a2
+		move.l	object(pc),a1	
+		move.w	#4,d0
+		move.w	#2,d1
+		move.w	#$aaaa,d2
+		CALL	_add_polygon,a1:object a2:point_list d0:points d1:colour d2:texture,a0:polygon
+		rts
+
+		FN	_setup_objectb
+
+		move.l	camera(pc),a2
+		CALL	_add_object,a2:camera,a1:object
+		move.l	a1,object
+		move.l	a1,object2
+
+		move.l	#50*16384,OBJ_XO(a1)
+		move.l	#5*16384,OBJ_YO(a1)
+		move.l	#128*16384,OBJ_ZO(a1)
+		move.w	#3,OBJ_SCALE(a1)
+
+		defv	dd,-dd,dd
+		CALL	_add_point,a1:object d0:x d1:y d2:z,a0:point
+		move.l	a0,pnta
+
+		defv	dd,-dd,-dd
+		CALL	_add_point,a1:object d0:x d1:y d2:z,a0:point
+		move.l	a0,pntb
+
+		defv	-dd,-dd,-dd
+		CALL	_add_point,a1:object d0:x d1:y d2:z,a0:point
+		move.l	a0,pntc
+
+		defv	-dd,-dd,dd
+		CALL	_add_point,a1:object d0:x d1:y d2:z,a0:point
+		move.l	a0,pntd
+
+		defv	dd,dd,dd
+		CALL	_add_point,a1:object d0:x d1:y d2:z,a0:point
+		move.l	a0,pnte
+
+		defv	dd,dd,-dd
+		CALL	_add_point,a1:object d0:x d1:y d2:z,a0:point
+		move.l	a0,pntf
+
+		defv	-dd,dd,-dd
+		CALL	_add_point,a1:object d0:x d1:y d2:z,a0:point
+		move.l	a0,pntg
+
+		defv	-dd,dd,dd
+		CALL	_add_point,a1:object d0:x d1:y d2:z,a0:point
+		move.l	a0,pnth
+
+		lea	pnts(pc),a2
+		move.l	pntd(pc),(a2)+
+		move.l	pntc(pc),(a2)+
+		move.l	pntg(pc),(a2)+
+		move.l	pnth(pc),(a2)
+		lea	pnts(pc),a2
+		move.l	object(pc),a1
+		move.w	#4,d0
+		move.w	#7,d1
+		move.w	#-1,d2
+		CALL	_add_polygon,a1:object a2:point_list d0:points d1:colour d2:texture,a0:polygon
+
+		lea	pnts(pc),a2
+		move.l	pnta(pc),(a2)+
+		move.l	pntd(pc),(a2)+
+		move.l	pnth(pc),(a2)+
+		move.l	pnte(pc),(a2)
+		lea	pnts(pc),a2
+		move.l	object(pc),a1
+		move.w	#4,d0
+		move.w	#6,d1
+		move.w	#-1,d2
+		CALL	_add_polygon,a1:object a2:point_list d0:points d1:colour d2:texture,a0:polygon
+
+		lea	pnts(pc),a2
+		move.l	pntb(pc),(a2)+
+		move.l	pnta(pc),(a2)+
+		move.l	pnte(pc),(a2)+
+		move.l	pntf(pc),(a2)
+		lea	pnts(pc),a2
+		move.l	object(pc),a1
+		move.w	#4,d0
+		move.w	#5,d1
+		move.w	#-1,d2
+		CALL	_add_polygon,a1:object a2:point_list d0:points d1:colour d2:texture,a0:polygon
+
+		lea	pnts(pc),a2
+		move.l	pntc(pc),(a2)+
+		move.l	pntb(pc),(a2)+
+		move.l	pntf(pc),(a2)+
+		move.l	pntg(pc),(a2)
+		lea	pnts(pc),a2
+		move.l	object(pc),a1
+		move.w	#4,d0
+		move.w	#4,d1
+		move.w	#-1,d2
+		CALL	_add_polygon,a1:object a2:point_list d0:points d1:colour d2:texture,a0:polygon
+
+		lea	pnts(pc),a2
+		move.l	pnta(pc),(a2)+
+		move.l	pntb(pc),(a2)+
+		move.l	pntc(pc),(a2)+
+		move.l	pntd(pc),(a2)
+		lea	pnts(pc),a2
+		move.l	object(pc),a1
+		move.w	#4,d0
+		move.w	#3,d1
+		move.w	#-1,d2
+		CALL	_add_polygon,a1:object a2:point_list d0:points d1:colour d2:texture,a0:polygon
+
+		lea	pnts(pc),a2
+		move.l	pnth(pc),(a2)+
+		move.l	pntg(pc),(a2)+
+		move.l	pntf(pc),(a2)+
+		move.l	pnte(pc),(a2)
+		lea	pnts(pc),a2
+		move.l	object(pc),a1	
+		move.w	#4,d0
+		move.w	#2,d1
+		move.w	#$aaaa,d2
+		CALL	_add_polygon,a1:object a2:point_list d0:points d1:colour d2:texture,a0:polygon
+		rts
+;
+;test setup
+;
+
+		FN	_setup
+
+		moveq	#0,d0
+		moveq	#0,d1
+		moveq	#0,d2
+		moveq	#0,d3
+		moveq	#0,d4
+		moveq	#0,d5
+		CALL	_add_camera,d0:xo d1:yo d2:zo d3:pan d4:tilt d5:roll,a1:camera
+		move.l	a1,camera
+
+		CALL	_setup_objecta
+		CALL	_setup_objectb
+		rts
+;
+;test 
+;		
+
+;
+;Main loop
+;
+
+		FN	_main
+
+		lea	lut_spalette(pc),a0		
+		CALL	_setup_system,a0:palette,a6:chip
+
+		CALL	_3d_init,a6:chip
+
+		CALL	_setup
+
+		move.l	camera(pc),a0
+		moveq	#0,d0
+		moveq	#0,d1
+		moveq	#0,d2
+		moveq	#0,d3
+		moveq	#0,d4
+		moveq	#0,d5
+		CALL	_incremental_camera,a0:camera d0:dx d1:dy d2:dz d3:dpan d4:dtilt d5:droll
+
+		lea	VBI_task(pc),a0
+		lea	VBI_stack+VBI_stacksize(pc),a1
+		moveq	#0,d0
+		CALL	ex_fork,a0:pc a1:stack d0:priority a6:chip,a1:tcb
+		move.l	a1,VBI_tcb
+
+;
+;background rendering loop
+;
+
+loop:		tst.w	RENDER_signal
+		beq.s	loop				;wait for begin
+
+		move.w	#$f00,col00(a6)
+		CALL	_3d_clear,a6:chip
+
+		move.l	camera(pc),a0
+		CALL	_render_objects,a0:camera a6:chip
+
+		clr.w	col00(a6)
+
+		clr.w	RENDER_signal			;signal end
+
+		CALL	_get_key,,d0:key
+		beq	loop
+
+		move.l	VBI_tcb(pc),a0
+		CALL	ex_terminate,a0:thread a6:chip
+
+		move.l	camera(pc),a0
+		CALL	_kill_camera,a0:camera
+
+		CALL	_3d_close,a6:chip
+
+		CALL	_reset_system,a6:chip
+		rts
+
+RENDER_signal:	dc.w	0
+VBI_tcb:	ds.l	1
+VBI_stack:	ds.b	VBI_stacksize
+		EVEN
+
+;
+;Vertical blanking task (timing sensitive routines run every 20 ms)
+;
+
+VBI_task:	lea	CHIP,a6
+
+vbi1:		CALL	_wait_display,a6:chip
+
+		move.w	#$00f,col00(a6)
+
+		move.l	object1(pc),a0		;rotate one of the objects
+		move.l	camera(pc),a1
+		moveq	#4,d0
+		moveq	#4,d1
+		moveq	#4,d2
+		CALL	_incremental_rotate,a0:object a1:camera d0:dpan d1:dtilt d2:droll
+
+		move.l	object2(pc),a0		;rotate one of the objects
+		move.l	camera(pc),a1
+		moveq	#4,d0
+		moveq	#4,d1
+		moveq	#2,d2
+		CALL	_incremental_rotate,a0:object a1:camera d0:dpan d1:dtilt d2:droll
+
+		tst.w	RENDER_signal		;render still going
+		bne.s	vbi1			;yes..skip
+
+		CALL	_3d_display_swap,a6:chip
+
+		move.w	#-1,RENDER_signal	;restart render
+		bra.s	vbi1
+
+		END

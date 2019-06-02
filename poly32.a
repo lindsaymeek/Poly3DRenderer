@@ -1,0 +1,899 @@
+
+	include	"header.i"
+
+;
+;Scan line based polygon filling routine
+;
+
+
+	section		ppoly_c,CODE
+
+	EVEN
+LHT:	dc.l	%10000000000000000000000000000000	;0
+	dc.l	%11000000000000000000000000000000	;1
+	dc.l	%11100000000000000000000000000000	;2
+	dc.l	%11110000000000000000000000000000	;3
+	dc.l	%11111000000000000000000000000000	;4
+	dc.l	%11111100000000000000000000000000	;5
+	dc.l	%11111110000000000000000000000000	;6
+	dc.l	%11111111000000000000000000000000	;7
+	dc.l	%11111111100000000000000000000000	;8
+	dc.l	%11111111110000000000000000000000	;9
+	dc.l	%11111111111000000000000000000000	;10
+	dc.l	%11111111111100000000000000000000	;11
+	dc.l	%11111111111110000000000000000000	;12
+	dc.l	%11111111111111000000000000000000	;13
+	dc.l	%11111111111111100000000000000000	;14
+	dc.l	%11111111111111110000000000000000	;15
+	dc.l	%11111111111111111000000000000000	;16
+	dc.l	%11111111111111111100000000000000	;17
+	dc.l	%11111111111111111110000000000000	;18
+	dc.l	%11111111111111111111000000000000	;19
+	dc.l	%11111111111111111111100000000000	;20
+	dc.l	%11111111111111111111110000000000	;21
+	dc.l	%11111111111111111111111000000000	;22
+	dc.l	%11111111111111111111111100000000	;23
+	dc.l	%11111111111111111111111110000000	;24
+	dc.l	%11111111111111111111111111000000	;25
+	dc.l	%11111111111111111111111111100000	;26
+	dc.l	%11111111111111111111111111110000	;27
+	dc.l	%11111111111111111111111111111000	;28
+	dc.l	%11111111111111111111111111111100	;29
+	dc.l	%11111111111111111111111111111110	;30
+	dc.l	%11111111111111111111111111111111	;31
+
+work:
+
+RHT:	dc.l	%11111111111111111111111111111111	;0
+	dc.l	%01111111111111111111111111111111	;1
+	dc.l	%00111111111111111111111111111111	;2
+	dc.l	%00011111111111111111111111111111	;3
+	dc.l	%00001111111111111111111111111111	;4
+	dc.l	%00000111111111111111111111111111	;5
+	dc.l	%00000011111111111111111111111111	;6
+	dc.l	%00000001111111111111111111111111	;7
+	dc.l	%00000000111111111111111111111111	;8
+	dc.l	%00000000011111111111111111111111	;9
+	dc.l	%00000000001111111111111111111111	;10
+	dc.l	%00000000000111111111111111111111	;11
+	dc.l	%00000000000011111111111111111111	;12
+	dc.l	%00000000000001111111111111111111	;13
+	dc.l	%00000000000000111111111111111111	;14
+	dc.l	%00000000000000011111111111111111	;15
+	dc.l	%00000000000000001111111111111111	;16
+	dc.l	%00000000000000000111111111111111	;17
+	dc.l	%00000000000000000011111111111111	;18
+	dc.l	%00000000000000000001111111111111	;19
+	dc.l	%00000000000000000000111111111111	;20
+	dc.l	%00000000000000000000011111111111	;21
+	dc.l	%00000000000000000000001111111111	;22
+	dc.l	%00000000000000000000000111111111	;23
+	dc.l	%00000000000000000000000011111111	;24
+	dc.l	%00000000000000000000000001111111	;25
+	dc.l	%00000000000000000000000000111111	;26
+	dc.l	%00000000000000000000000000011111	;27
+	dc.l	%00000000000000000000000000001111	;28
+	dc.l	%00000000000000000000000000000111	;29
+	dc.l	%00000000000000000000000000000011	;30
+	dc.l	%00000000000000000000000000000001	;31
+	EVEN
+
+;
+;Work area for render
+;
+work2:	dc.w	0	;xs
+	dc.w	0	;ys
+	dc.w	0	;vertice counter
+	dc.w	0	;vertice max
+	dc.w	0	;verticel1
+	dc.w	0	;verticel2
+	dc.w	0	;verticer1
+	dc.w	0	;verticer2
+	dc.w	0	;dxl
+	dc.w	0	;dyl
+	dc.w	0	;cxl
+	dc.w	0	;cyl
+	dc.w	0	;adjl1
+	dc.w	0	;adjl2
+	dc.w	0	;xl
+	dc.w	0	;dxr
+	dc.w	0	;dyr
+	dc.w	0	;cxr
+	dc.w	0	;cyr
+	dc.w	0	;adjr1
+	dc.w	0	;adjr2
+	dc.w	0	;xr
+
+oxs	=	work2-work
+oys	=	oxs+2
+ovc	=	oys+2
+ovm	=	ovc+2
+ovl1	=	ovm+2
+ovl2	=	ovl1+2
+ovr1	=	ovl2+2
+ovr2	=	ovr1+2
+odxl	=	ovr2+2
+odyl	=	odxl+2
+ocxl	=	odyl+2
+ocyl	=	ocxl+2
+oadjl1	=	ocyl+2
+oadjl2	=	oadjl1+2
+oxl	=	oadjl2+2
+odxr	=	oxl+2
+odyr	=	odxr+2
+ocxr	=	odyr+2
+ocyr	=	ocxr+2
+oadjr1	=	ocyr+2
+oadjr2	=	oadjr1+2
+oxr	=	oadjr2+2
+
+;
+;Fill a line between two points using word copies
+;
+;A0=destination array
+;D0=Start X (*2)
+;D1=End   X (*2)
+;D2=X size  (*2)
+;
+
+	FN	_poly_fill,a0:destination d0:x1 d1:x2 d2:xs d5:i128 a4:work,,a0 d3 d4
+
+	cmp.w	d0,d1		;do swapped operation if x1 > x2
+	blt.s	tf9
+	
+	move.w	d0,d3
+	sub.w	d5,d3		;clear left hand side
+	bmi.s	tf1
+tf2:	clr.l	(a0)+
+	sub.w	d5,d3
+	bpl.s	tf2
+
+tf1:	move.w	d1,d3		;see if start and end are in same quadrant
+	eor.w	d0,d3
+	cmp.w	d5,d3
+	blt.s	tf3		;yes, do special case
+
+	moveq	#$7c,d3		;work out which bit we're in
+	and.w	d0,d3
+	move.l	RHT-work(a4,d3.w),(a0)+	;store rh word
+
+	move.w	d1,d4
+	sub.w	d0,d4			;dx=size of body
+
+	add.w	d3,d4
+	sub.w	d5,d4			;dx=dx-(32-bit) => dx=dx-32+bit
+	cmp.w	d5,d4
+	blt.s	tf6
+
+	moveq	#-1,d3			;fill interior
+tf7:	move.l	d3,(a0)+
+	sub.w	d5,d4
+	cmp.w	d5,d4
+	bge.s	tf7
+
+tf6:	moveq	#$7c,d3
+	and.w	d1,d3
+	move.l	LHT-work(a4,d3.w),(a0)+	;store lh word
+
+	move.w	d2,d4			;end
+	sub.w	d1,d4			;work out distance from end
+
+	sub.w	d5,d4			;see if > 32
+	ble.s	tf4
+tf8:	clr.l	(a0)+			;yes, clear
+	sub.w	d5,d4			;keep going
+	bgt.s	tf8
+
+	bra	jump_back
+
+;special case where start and end are in same word
+
+tf3:	moveq	#$7c,d3
+	and.w	d0,d3
+	move.l	RHT-work(a4,d3.w),d3		;fetch rh side
+
+	moveq	#$7c,d4
+	and.w	d1,d4
+	and.l	LHT-work(a4,d4.w),d3		;fetch lh side and mask 
+
+	move.l	d3,(a0)+		;store it
+
+	move.w	d2,d4			;end
+	sub.w	d1,d4			;work out distance from end
+
+	sub.w	d5,d4			;see if > 64
+	ble.s	tf4
+tf5:	clr.l	(a0)+			;yes, clear
+	sub.w	d5,d4			;keep going
+	bgt.s	tf5
+tf4:
+	bra	jump_back
+
+;
+;swapped operation where x1 > x2
+;
+
+tf9:	move.w	d1,d3
+	sub.w	d5,d3		;clear left hand side
+	bmi.s	tf1a
+tf2a:	clr.l	(a0)+
+	sub.w	d5,d3
+	bpl.s	tf2a
+
+tf1a:	move.w	d0,d3		;see if start and end are in same quadrant
+	eor.w	d1,d3
+	cmp.w	d5,d3
+	blt.s	tf3a		;yes, do special case
+
+	moveq	#$7c,d3		;work out which bit we're in
+	and.w	d1,d3
+	move.l	RHT-work(a4,d3.w),(a0)+	;store rh word
+
+	move.w	d0,d4
+	sub.w	d1,d4			;dx=size of body
+
+	add.w	d3,d4
+	sub.w	d5,d4			;dx=dx-(32-bit) => dx=dx-32+bit
+	cmp.w	d5,d4
+	blt.s	tf6a
+
+	moveq	#-1,d3			;fill interior
+tf7a:	move.l	d3,(a0)+
+	sub.w	d5,d4
+	cmp.w	d5,d4
+	bge.s	tf7a
+
+tf6a:	moveq	#$7c,d3
+	and.w	d0,d3
+	move.l	LHT-work(a4,d3.w),(a0)+	;store lh word
+
+	move.w	d2,d4			;end
+	sub.w	d0,d4			;work out distance from end
+
+	sub.w	d5,d4			;see if > 32
+	ble.s	tf4a
+tf8a:	clr.l	(a0)+			;yes, clear
+	sub.w	d5,d4			;keep going
+	bgt.s	tf8a
+
+	bra	jump_back
+
+;special case where start and end are in same word
+
+tf3a:	moveq	#$7c,d3
+	and.w	d1,d3
+	move.l	RHT-work(a4,d3.w),d3		;fetch rh side
+
+	moveq	#$7c,d4
+	and.w	d0,d4
+	and.l	LHT-work(a4,d4.w),d3		;fetch lh side and mask 
+
+	move.l	d3,(a0)+		;store it
+
+	move.w	d2,d4			;end
+	sub.w	d0,d4			;work out distance from end
+
+	sub.w	d5,d4			;see if > 64
+	ble.s	tf4a
+tf5a:	clr.l	(a0)+			;yes, clear
+	sub.w	d5,d4			;keep going
+	bgt.s	tf5a
+tf4a:
+	bra	jump_back
+
+;
+;Render a filled polygon graphic image
+;
+;Assumes bounding box has already been computed
+;
+
+	FN	_poly_render,a0:destination a1:polygon,,a0 a2 a3 a4 a5 d0 d1 d2 d3 d4 d6 d7
+
+	move.l	a0,POLY_DATA(a1)
+
+	lea	work(pc),a4
+	move.w	POLY_YS(a1),oys(a4)	
+
+	move.w	POLY_XS(a1),d1
+	moveq	#$1f,d0		;round xs up to nearest long
+	and.w	d1,d0
+	beq.s	ren1
+	and.w	#$ffe0,d1
+	add.w	#$0020,d1
+
+ren1:	move.w	d1,POLY_XS(a1)
+
+	asl.w	#2,d1
+	move.w	d1,oxs(a4)	;save
+
+	move.w	POLY_VERTICES(a1),ovm(a4)	;max vertices
+	clr.w	ovc(a4)			;current vertice
+
+	move.w	POLY_HIGHEST(a1),d4	;point with lowest y coordinate
+	move.w	d4,ovl1(a4)		;setup edge follower start
+	move.w	d4,ovr1(a4)
+
+	;left
+
+;	move.w	ovl1(a4),d4
+
+ren3:	move.w	ovc(a4),d0		;are we out of vertices?
+	addq.w	#1,d0
+	cmp.w	ovm(a4),d0
+	ble.s	ren2
+	rts
+
+ren2:	move.w	d0,ovc(a4)		;save back
+
+	tst.w	d4			;one vertice back
+	beq.s	ren3a
+	move.w	d4,d5
+	subq.w	#4,d5
+	bra.s	ren4
+
+ren3a:	move.w	ovm(a4),d5
+	subq.w	#1,d5
+	asl.w	#2,d5
+
+ren4:	move.w	d5,ovl2(a4)		;save left vertice
+
+	move.l	POLY_VERTICE(a1,d4.w),a2	;p(l1)
+	move.l	POLY_VERTICE(a1,d5.w),a3	;p(l2)
+
+	move.w	POINT_Y(a3),d6	;dyl
+	sub.w	POINT_Y(a2),d6
+	bne.s	ren5
+	move.w	d5,d4		;keep going if dyl==0
+	bra.s	ren3
+
+ren5:	moveq	#0,d3		;sign=0
+	move.w	POINT_X(a3),d7	;dxl
+	sub.w	POINT_X(a2),d7
+	bpl.s	ren6
+	neg.w	d7		;if(dxl < 0) dxl=-dxl
+	moveq	#1,d3		;sign=1
+
+ren6:
+
+;	addq.w	#1,d7		;dxl++
+;	addq.w	#1,d6		;dyl++
+
+	move.w	d6,odyl(a4)
+	move.w	d7,odxl(a4)
+
+	moveq	#4,d2		;adjl1=1
+	move.w	d6,d1		;adjl2=dyl
+
+	move.w	d7,d0		;temp=dxl-dyl
+	sub.w	d6,d0
+	ble.s	ren7
+ren8:	addq.w	#4,d2		;adjl1++
+	add.w	d6,d1		;adjl2+=dyl
+	sub.w	d6,d0		;temp-=dyl
+	bgt.s	ren8
+
+ren7:	tst.w	d3		;if(sign) adjl1=-adjl1
+	beq.s	ren9
+	neg.w	d2
+ren9:	move.w	d2,oadjl1(a4)
+	move.w	d1,oadjl2(a4)
+
+	move.w	d6,ocxl(a4)	;cxl = dyl
+	move.w	d6,ocyl(a4)	;cyl = dyl 
+	move.w	POINT_X(a2),d0
+	sub.w	POLY_X(a1),d0
+	asl.w	#2,d0
+	move.w	d0,oxl(a4)	;reset xl
+
+	;right
+
+	move.w	ovr1(a4),d4	;fetch point
+
+ren10:	move.w	ovc(a4),d0		;are we out of vertices?
+	addq.w	#1,d0
+	cmp.w	ovm(a4),d0
+	ble.s	ren11
+	rts
+
+ren11:	move.w	d0,ovc(a4)		;save back
+
+	move.w	ovm(a4),d5		;vertice at end of list
+	subq.w	#1,d5
+	asl.w	#2,d5
+
+	cmp.w	d4,d5			;at end of list?
+	beq.s	ren12
+	move.w	d4,d5
+	addq.w	#4,d5			;no..vertice is next
+	bra.s	ren13
+
+ren12:	moveq	#0,d5			;reset to start
+
+ren13:	move.w	d5,ovr2(a4)
+
+	move.l	POLY_VERTICE(a1,d4.w),a2	;p(r1)
+	move.l	POLY_VERTICE(a1,d5.w),a3	;p(r2)
+
+	move.w	POINT_Y(a3),d6	;dyr
+	sub.w	POINT_Y(a2),d6
+	bne.s	ren14
+	move.w	d5,d4		;keep going if dyr==0
+	bra.s	ren10
+
+ren14:	moveq	#0,d3		;sign=0
+	move.w	POINT_X(a3),d7	;dxr
+	sub.w	POINT_X(a2),d7
+	bpl.s	ren15
+	neg.w	d7		;if(dxr < 0) dxr=-dxr
+	moveq	#1,d3		;sign=1
+
+ren15:
+
+;	addq.w	#1,d7		;dxr++
+;	addq.w	#1,d6		;dyr++
+
+	move.w	d6,odyr(a4)
+	move.w	d7,odxr(a4)
+
+	moveq	#4,d2		;adjr1=1
+	move.w	d6,d1		;adjr2=dyr
+
+	move.w	d7,d0		;temp=dxr-dyr
+	sub.w	d6,d0
+	ble.s	ren16
+ren17:	addq.w	#4,d2		;adjr1++
+	add.w	d6,d1		;adjr2+=dyr
+	sub.w	d6,d0		;temp-=dyr
+	bgt.s	ren17
+
+ren16:	tst.w	d3		;if(sign) adjr1=-adjr1
+	beq.s	ren18
+	neg.w	d2
+ren18:	move.w	d2,oadjr1(a4)
+	move.w	d1,oadjr2(a4)
+
+	move.w	d6,ocxr(a4)
+	move.w	d6,ocyr(a4)	;reset counters
+
+	move.w	POINT_X(a2),d0
+	sub.w	POLY_X(a1),d0
+	asl.w	#2,d0
+	move.w	d0,oxr(a4)	;reset xr
+
+	;fill loop
+
+	move.w	oxs(a4),d2
+
+	move.w	oxl(a4),d0	;left side
+	move.w	oxr(a4),d1	;right side
+
+	move.w	ocxl(a4),d6
+	move.w	ocxr(a4),d7
+
+	move.w	#128,d5		;constant size of a single fill word in adjusted pixels
+
+	lea	_poly_fill(pc),a5
+
+ren19:
+	jmp	(a5)		;call poly fill routine (scanline)
+
+jump_back:			;poly routine jumps back here
+
+	sub.w	odxl(a4),d6
+	bge.s	ren20
+	add.w	oadjl2(a4),d6
+	add.w	oadjl1(a4),d0
+
+ren20:	sub.w	odxr(a4),d7
+	bge.s	ren21
+	add.w	oadjr2(a4),d7
+	add.w	oadjr1(a4),d1
+
+ren21:	subq.w	#1,ocyl(a4)
+	beq.s	ren41
+	subq.w	#1,ocyr(a4)
+	bne.s	ren19
+	bra.s	ren40
+
+ren41:	bra	ren42
+
+ren40:	move.w	d0,oxl(a4)
+	move.w	d6,ocxl(a4)
+
+	;change right vertice
+
+	move.w	ovr2(a4),d4
+
+ren22:	move.w	ovc(a4),d0		;are we out of vertices?
+	addq.w	#1,d0
+	cmp.w	ovm(a4),d0
+	ble.s	ren23
+	rts
+
+ren23:	move.w	d0,ovc(a4)		;save back
+
+	move.w	ovm(a4),d5
+	subq.w	#1,d5
+	asl.w	#2,d5
+	cmp.w	d4,d5
+	beq.s	ren24
+	move.w	d4,d5
+	addq.w	#4,d5
+	bra.s	ren25
+
+ren24:	moveq	#0,d5
+
+ren25:	move.w	d5,ovr2(a4)
+
+	move.l	POLY_VERTICE(a1,d4.w),a2	;p(r1)
+	move.l	POLY_VERTICE(a1,d5.w),a3	;p(r2)
+
+	move.w	POINT_Y(a3),d6	;dyr
+	sub.w	POINT_Y(a2),d6
+	bne.s	ren26
+	move.w	d5,d4		;keep going if dyr==0
+	bra.s	ren22
+
+ren26:	moveq	#0,d3		;sign=0
+	move.w	POINT_X(a3),d7	;dxr
+	sub.w	POINT_X(a2),d7
+	bpl.s	ren27
+	neg.w	d7		;if(dxr < 0) dxr=-dxr
+	moveq	#1,d3		;sign=1
+
+ren27:
+
+;	addq.w	#1,d7		;dxr++
+;	addq.w	#1,d6		;dyr++
+
+	move.w	d6,odyr(a4)
+	move.w	d7,odxr(a4)
+
+	moveq	#4,d2		;adjr1=1
+	move.w	d6,d1		;adjr2=dyr
+
+	move.w	d7,d0		;temp=dxr-dyr
+	sub.w	d6,d0
+	ble.s	ren28
+ren29:	addq.w	#4,d2		;adjr1++
+	add.w	d6,d1		;adjr2+=dyr
+	sub.w	d6,d0		;temp-=dyr
+	bgt.s	ren29
+
+ren28:	tst.w	d3		;if(sign) adjr1=-adjr1
+	beq.s	ren30
+	neg.w	d2
+ren30:
+	move.w	d2,oadjr1(a4)
+	move.w	d1,oadjr2(a4)
+
+	move.w	d6,ocxr(a4)	;reset counters
+	move.w	d6,ocyr(a4)
+	move.w	POINT_X(a2),d0
+	sub.w	POLY_X(a1),d0
+	asl.w	#2,d0
+	move.w	d0,oxr(a4)	;reset xr
+
+	move.w	oxs(a4),d2
+	move.w	oxl(a4),d0
+	move.w	oxr(a4),d1
+
+	move.w	ocxl(a4),d6
+	move.w	ocxr(a4),d7
+
+	move.w	#128,d5
+	bra	ren19
+
+ren42:	move.w	d1,oxr(a4)
+	move.w	d7,ocxr(a4)
+
+	;change left vertice
+
+	move.w	ovl2(a4),d4
+
+ren31:	move.w	ovc(a4),d0		;are we out of vertices?
+	addq.w	#1,d0
+	cmp.w	ovm(a4),d0
+	ble.s	ren32
+	rts
+
+ren32:	move.w	d0,ovc(a4)		;save back
+
+	tst.w	d4
+	beq.s	ren33
+	move.w	d4,d5
+	subq.w	#4,d5
+	bra.s	ren34
+
+ren33:	move.w	ovm(a4),d5
+	subq.w	#1,d5
+	asl.w	#2,d5
+
+ren34:	move.w	d5,ovl2(a4)
+
+	move.l	POLY_VERTICE(a1,d4.w),a2	;p(l1)
+	move.l	POLY_VERTICE(a1,d5.w),a3	;p(l2)
+
+	move.w	POINT_Y(a3),d6	;dyl
+	sub.w	POINT_Y(a2),d6
+	bne.s	ren35
+	move.w	d5,d4		;keep going if dyl==0
+	bra.s	ren31
+
+ren35:	moveq	#0,d3		;sign=0
+	move.w	POINT_X(a3),d7	;dxl
+	sub.w	POINT_X(a2),d7
+	bpl.s	ren36
+	neg.w	d7		;if(dxl < 0) dxl=-dxl
+	moveq	#1,d3		;sign=1
+
+ren36:
+
+;	addq.w	#1,d7		;dxl++
+;	addq.w	#1,d6		;dyl++
+
+	move.w	d6,odyl(a4)
+	move.w	d7,odxl(a4)
+
+	moveq	#4,d2		;adjl1=1
+	move.w	d6,d1		;adjl2=dyl
+
+	move.w	d7,d0		;temp=dxl-dyl
+	sub.w	d6,d0
+	ble.s	ren37
+ren38:	addq.w	#4,d2		;adjl1++
+	add.w	d6,d1		;adjl2+=dyl
+	sub.w	d6,d0		;temp-=dyl
+	bgt.s	ren38
+
+ren37:	tst.w	d3		;if(sign) adjl1=-adjl1
+	beq.s	ren39
+	neg.w	d2
+ren39:	move.w	d2,oadjl1(a4)
+	move.w	d1,oadjl2(a4)
+
+	move.w	d6,ocxl(a4)	;reset counters
+	move.w	d6,ocyl(a4)
+	move.w	POINT_X(a2),d0
+	sub.w	POLY_X(a1),d0
+	asl.w	#2,d0
+	move.w	d0,oxl(a4)	;reset xl
+
+	move.w	oxs(a4),d2
+	move.w	oxl(a4),d0
+	move.w	oxr(a4),d1
+
+	move.w	ocxl(a4),d6
+	move.w	ocxr(a4),d7
+	move.w	#128,d5
+
+	subq.w	#1,ocyr(a4)
+	beq	ren40
+	bra	ren19
+
+
+;
+;Setup for polygon blitting
+;
+
+	FN	_poly_setup,a6:chip,,a0
+
+	lea	bltcon1(a6),a0
+
+	WaitBlit
+
+	clr.w	(a0)+				;bltcon1
+	move.w	#-1,(a0)+			;bltafwm
+	clr.w	(a0)+				;bltalwm
+	move.w	#-2,bltamod(a6)
+	rts
+
+;
+;reset bounding box
+;
+
+	FN	_poly_reset,a0:screen,,d0 d1 a0
+
+	move.w	#-32767,d0
+	move.w	#32767,d1
+
+	move.w	d1,(a0)+
+	move.w	d1,(a0)+
+	move.w	d0,(a0)+
+	move.w	d0,(a0)+
+	rts
+
+;
+;Clear the current redraw screen according to the redraw window size
+;
+;Do this prior to recalculating the next display parameters
+;
+
+	FN	_poly_clear,a0:screen a6:chip,,d0 d1 d2 d3 d4 a0 a1
+
+	move.l	a0,a1
+
+	movem.w	(a0)+,d0-d3	;x1,y1,x2,y2
+
+	cmp.w	d2,d0		;exit if illegal window size
+	bge.s	scl1
+	cmp.w	d3,d1
+	bge.s	scl1
+
+	and.w	#$fff0,d0	;round x1 to lowest word
+	sub.w	d0,d2		;dx
+	sub.w	d1,d3		;dy
+
+	moveq	#$f,d4		;round xs up to nearest word
+	and.w	d2,d4
+	beq.s	scl2
+	and.w	#$fff0,d2
+	add.w	#$10,d2
+
+scl2:	move.w	d2,d4
+	lsr.w	#3,d4
+	neg.w	d4
+	add.w	#WIDTH_B,d4	;modulo
+
+	mulu.w	#NO_PLANES*64,d3
+	lsr.w	#4,d2
+	add.w	d3,d2		;blit size
+
+	CALL	_compute_redraw_screen,d0:xpos d1:ypos,a0:screen,d2 d3 a6
+
+	NastyBlit
+	WaitBlit
+	NiceBlit
+
+	move.l	#256*65536,bltcon0(a6)	;start blit
+	move.l	a0,bltdpt(a6)
+	move.w	d4,bltdmod(a6)
+	move.w	d2,bltsize(a6)
+
+scl1:	move.l	a1,a0
+	CALL	_poly_reset,a0:screen
+	rts
+
+;
+;Blit polygon to redraw display 
+;
+;(CPU hogging version)
+;
+;Can waste quite a lot of cpu time waiting for previous plane to finish
+;(10-40 raster lines)
+;
+
+	FN	_poly_blit,a0:screen a1:polygon a6:chip,,d0 d1 a0 a2 d2 d3 d4 d5 a3 a4 a5 d7
+
+	move.w	POLY_X(a1),d0
+	move.w	POLY_Y(a1),d1
+
+	;update screen refresh boundaries
+
+	cmp.w	SCREEN_X1(a0),d0
+	bge.s	pf3
+	move.w	d0,SCREEN_X1(a0)
+pf3:	cmp.w	SCREEN_Y1(a0),d1
+	bge.s	pf4
+	move.w	d1,SCREEN_Y1(a0)
+pf4:	
+	move.w	d0,d2
+	move.w	d1,d3
+	add.w	POLY_XS(a1),d2
+	add.w	POLY_YS(a1),d3
+	
+	cmp.w	SCREEN_X2(a0),d2
+	ble.s	pf5
+	move.w	d2,SCREEN_X2(a0)
+pf5:	cmp.w	SCREEN_Y2(a0),d3
+	ble.s	pf6
+	move.w	d3,SCREEN_Y2(a0)
+pf6:
+
+	CALL	_compute_redraw_screen,d0:xpos d1:ypos,a0:screen,a1 a6
+
+	;a0=destination data
+
+	move.w	POLY_X(a1),d0			;setup shifter value
+	and.w	#15,d0
+	ror.w	#4,d0		
+	or.w	#$bca,d0			;bltcon0=cookie with b disabled
+
+	move.w	POLY_XS(a1),d1
+	lsr.w	#3,d1
+	addq.w	#2,d1
+	move.w	d1,d2
+
+	lsr.w	#1,d1
+	
+	move.w	POLY_YS(a1),d3			;and lines down
+	lsl.w	#6,d3
+	add.w	d3,d1				;d1=blitsize
+
+	neg.w	d2
+	add.w	#WIDTH_B*NO_PLANES,d2		;d2=image modulo
+
+	move.l	POLY_DATA(a1),a2		;a2=source data
+
+	moveq	#NO_PLANES-1,d4			;plane counter
+	move.w	POLY_COLOUR(a1),d6		;fetch adjusted palette draw colour
+	move.w	POLY_TEXTURE(a1),d5
+	lea	bltbdat(a6),a4
+	lea	dmaconr(a6),a5
+	moveq	#6,d7
+
+	NastyBlit
+pf7:	btst	d7,(a5)				;wait for blitter
+	bne.s	pf7
+
+	move.w	d0,bltcon0(a6)
+	move.w	d2,bltcmod(a6)			;set screen modulos
+	move.w	d2,bltdmod(a6)
+
+pf2:	moveq	#0,d3				;texture = clear
+	lsr.w	#1,d6				;main blit loop
+	bcc.s	pf1
+	move.w	d5,d3				;texture = programmed
+
+pf1:	lea	bltcpt(a6),a3
+
+pf8:	btst	d7,(a5)		;wait for blitter
+	bne.s	pf8
+
+	move.w	d3,(a4)		;mask
+	move.l	a0,(a3)		;bltcpt
+	addq.l	#8,a3		;skip bltbpt
+	move.l	a2,(a3)+	;bltapt	
+	move.l	a0,(a3)+	;bltdpt
+	move.w	d1,(a3)		;bltsize
+
+	lea	WIDTH_B(a0),a0
+	dbra	d4,pf2
+
+	NiceBlit
+	rts
+
+;
+;polygon generator
+;
+	FN	_poly_generate,a0:screen a1:polygon a6:chip
+
+	move.l	a0,-(sp)
+
+	lea	render1,a0
+	CALL	_poly_render,a0:destination a1:polygon,,a1
+
+	move.l	(sp)+,a0
+
+	CALL	_poly_blit,a0:screen a1:polygon a6:chip
+	rts
+
+;
+;polygon renderer initialise
+;
+
+	FN	_poly_init,a6:chip,,a0 d0 a1
+
+	rts
+
+;
+;polygon renderer closedown
+;
+
+	FN	_poly_close,a6:chip,,a0
+
+	rts
+
+
+	section		ppoly_b,BSS,CHIP
+
+;
+;Render buffers
+;
+
+RBuf_Area	=	WIDTH_B*HEIGHT_P
+
+render1:	ds.b	RBuf_Area
+		EVEN
+
+	END
